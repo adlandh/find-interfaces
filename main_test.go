@@ -18,15 +18,17 @@ func TestFindInterfaces_NoGoFiles(t *testing.T) {
 		require.NoError(t, err, "failed to remove temporary directory")
 	}(tempDir)
 
-	// Call the function to test
-	interfaces, err := findInterfaces(tempDir)
+	// Create an InterfaceFinder instance
+	finder := NewInterfaceFinder()
+
+	// Call the method to test
+	interfaces, err := finder.FindInterfaces(tempDir)
 	require.NoError(t, err)
 	// Check the result
 	require.Len(t, interfaces, 0)
 }
 
 func TestFindInterfaces(t *testing.T) {
-
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", gofakeit.Word())
 	require.NoError(t, err)
@@ -36,7 +38,6 @@ func TestFindInterfaces(t *testing.T) {
 	}(tempDir)
 
 	count := gofakeit.Number(1, 5)
-
 	interfaces := make([]string, count)
 
 	for i := range count {
@@ -56,7 +57,6 @@ type ` + interfaceName + ` interface {
 `
 		err = os.WriteFile(testFile, []byte(interfaceDefinition), 0644)
 		require.NoError(t, err, "failed to create test file")
-
 	}
 
 	// Create a temporary subdirectory to check if it is included
@@ -85,12 +85,15 @@ type ` + interfaceName + ` interface {
 `
 		err = os.WriteFile(testFile, []byte(interfaceDefinition), 0644)
 		require.NoError(t, err, "failed to create test file")
-
 	}
 
-	// Call the function to test
-	interfacesFound, err := findInterfaces(tempDir)
-	require.NoError(t, err, "findInterfaces returned an error")
+	// Create an InterfaceFinder instance
+	finder := NewInterfaceFinder()
+
+	// Call the method to test
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.NoError(t, err, "FindInterfaces returned an error")
+
 	// Check the result
 	require.Len(t, interfacesFound, count)
 	for _, iface := range interfaces {
@@ -99,10 +102,34 @@ type ` + interfaceName + ` interface {
 }
 
 func TestFindInterfaces_NonExistentDirectory(t *testing.T) {
-	// Call the function to test
-	interfaces, err := findInterfaces(gofakeit.Word())
-	require.Error(t, err, "findInterfaces did not return an error for non-existent directory")
+	// Create an InterfaceFinder instance
+	finder := NewInterfaceFinder()
+
+	// Call the method to test
+	interfaces, err := finder.FindInterfaces(gofakeit.Word())
+	require.Error(t, err, "FindInterfaces did not return an error for non-existent directory")
 
 	// Check the result
-	require.Len(t, interfaces, 0, "findInterfaces returned an unexpected result: %v", interfaces)
+	require.Len(t, interfaces, 0, "FindInterfaces returned an unexpected result: %v", interfaces)
+}
+
+func TestIsGoFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		want     bool
+	}{
+		{"Go file", "test.go", true},
+		{"Go file with uppercase", "Test.GO", true},
+		{"Non-Go file", "test.txt", false},
+		{"File without extension", "test", false},
+		{"Go file with path", "/path/to/test.go", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isGoFile(tt.filename)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

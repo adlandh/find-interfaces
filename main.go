@@ -1,3 +1,4 @@
+// Package main provides a utility to find Go interface definitions in a directory.
 package main
 
 import (
@@ -11,45 +12,112 @@ import (
 	"strings"
 )
 
-var interfaceRegex = regexp.MustCompile(`type\s+(\w+)\s+interface\s*\{`)
+// Default regular expression to match Go interface definitions.
+// Captures the interface name as the first submatch.
+var defaultInterfaceRegex = regexp.MustCompile(`type\s+(\w+)\s+interface\s*\{`)
 
-func findInterfaces(folder string) ([]string, error) {
+// InterfaceFinder defines the configuration for finding interfaces.
+type InterfaceFinder struct {
+	// Pattern is the regular expression used to find interface definitions.
+	Pattern *regexp.Regexp
+	// baseDir is the absolute path of the directory being searched
+	baseDir string
+}
+
+// NewInterfaceFinder creates a new InterfaceFinder with default settings.
+func NewInterfaceFinder() *InterfaceFinder {
+	return &InterfaceFinder{
+		Pattern: defaultInterfaceRegex,
+	}
+}
+
+// FindInterfaces searches for interface definitions in the specified folder.
+// It does not search in subfolders.
+func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
 	var interfaces []string
 
-	err := filepath.WalkDir(folder, func(path string, info fs.DirEntry, err error) error {
+	// Get absolute path of the folder to use as base directory for security validation
+	absFolder, err := filepath.Abs(folder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	f.baseDir = absFolder
+
+	err = filepath.WalkDir(folder, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
+		// Skip subdirectories
 		if info.IsDir() && path != folder {
 			return filepath.SkipDir
 		}
 
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".go") {
-			data, err := os.ReadFile(path)
+		// Process only Go files
+		if !info.IsDir() && isGoFile(info.Name()) {
+			foundInterfaces, err := f.extractInterfacesFromFile(path)
 			if err != nil {
 				return err
 			}
-			src := string(data)
-			matches := interfaceRegex.FindAllStringSubmatch(src, -1)
-			for _, match := range matches {
-				interfaces = append(interfaces, match[1])
-			}
+
+			interfaces = append(interfaces, foundInterfaces...)
 		}
+
 		return nil
 	})
-	return interfaces, err
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk directory: %w", err)
+	}
+
+	return interfaces, nil
+}
+
+// isGoFile checks if a filename has a .go extension (case-insensitive).
+func isGoFile(filename string) bool {
+	return strings.HasSuffix(strings.ToLower(filename), ".go")
+}
+
+// extractInterfacesFromFile reads a file and extracts interface names.
+// It validates that the file path is within the base directory to prevent directory traversal attacks.
+func (f *InterfaceFinder) extractInterfacesFromFile(filePath string) ([]string, error) {
+	cleanPath := filepath.Clean(filePath)
+	// Validate that the file path is within the base directory
+	if !strings.HasPrefix(cleanPath, f.baseDir) {
+		return nil, fmt.Errorf("file path is outside the base directory: %s", filePath)
+	}
+
+	data, err := os.ReadFile(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	src := string(data)
+	matches := f.Pattern.FindAllStringSubmatch(src, -1)
+
+	var interfaces []string
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			interfaces = append(interfaces, match[1])
+		}
+	}
+
+	return interfaces, nil
 }
 
 func main() {
 	var flagPath string
 
-	flag.StringVar(&flagPath, "path", ".", "path to search")
+	flag.StringVar(&flagPath, "path", ".", "path to search for interfaces")
 	flag.Parse()
 
-	interfaces, err := findInterfaces(flagPath)
+	finder := NewInterfaceFinder()
+
+	interfaces, err := finder.FindInterfaces(flagPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error finding interfaces: %v", err)
 	}
 
 	fmt.Print(strings.Join(interfaces, " "))

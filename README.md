@@ -1,9 +1,38 @@
-Simple app which finds all interfaces in a given folder without checking subfolders.
+# find-interfaces
 
-Mostly created to use with gowrap.
+A simple Go utility that finds all interface definitions in a given folder without checking subfolders.
+
+Mostly created to use with [gowrap](https://github.com/hexdigest/gowrap).
 
 ## Installation
 
 ```bash
 go install github.com/adlandh/find-interfaces@latest
+```
+
+## Usage
+
+```bash
+# Search in current directory
+find-interfaces
+
+# Search in a specific directory
+find-interfaces -path /path/to/directory
+```
+
+## Features
+
+- Finds all interface definitions in Go files within a specified directory
+- Ignores subdirectories
+- Case-insensitive file extension matching
+- Uses regular expressions to identify interface definitions
+
+## Output
+
+The tool outputs a space-separated list of interface names found in the specified directory, which can be piped to other tools like gowrap.
+
+Example:
+```
+$ find-interfaces -path ./pkg/models
+Reader Writer Processor Handler
 ```

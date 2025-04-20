@@ -5,8 +5,8 @@ go 1.22
 toolchain go1.23.2
 
 require (
-	github.com/brianvoe/gofakeit/v7 v7.1.2
-	github.com/stretchr/testify v1.9.0
+	github.com/brianvoe/gofakeit/v7 v7.2.1
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
