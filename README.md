@@ -4,6 +4,10 @@ A simple Go utility that finds all interface definitions in a given folder witho
 
 Mostly created to use with [gowrap](https://github.com/hexdigest/gowrap).
 
+## Requirements
+
+- Go 1.22 or later
+
 ## Installation
 
 ```bash
@@ -26,6 +30,8 @@ find-interfaces -path /path/to/directory
 - Ignores subdirectories
 - Case-insensitive file extension matching
 - Uses regular expressions to identify interface definitions
+- Prevents directory traversal attacks with path validation
+- Processes only files with .go extension
 
 ## Output
 
