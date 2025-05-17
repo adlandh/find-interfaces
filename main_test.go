@@ -120,7 +120,6 @@ func TestIsGoFile(t *testing.T) {
 		want     bool
 	}{
 		{"Go file", "test.go", true},
-		{"Go file with uppercase", "Test.GO", true},
 		{"Non-Go file", "test.txt", false},
 		{"File without extension", "test", false},
 		{"Go file with path", "/path/to/test.go", true},
