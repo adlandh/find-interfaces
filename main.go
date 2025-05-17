@@ -85,7 +85,7 @@ func (f *InterfaceFinder) extractInterfacesFromFile(filePath string) ([]string, 
 	cleanPath := filepath.Clean(filePath)
 	// Validate that the file path is within the base directory
 	if !strings.HasPrefix(cleanPath, f.baseDir) {
-		return nil, fmt.Errorf("file path is outside the base directory: %s", filePath)
+		return nil, fmt.Errorf("file path %s (clean path: %s) is outside the base directory %s", filePath, cleanPath, f.baseDir)
 	}
 
 	data, err := os.ReadFile(cleanPath)
