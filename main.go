@@ -50,7 +50,7 @@ func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
 		}
 
 		// Skip subdirectories
-		if info.IsDir() && path != folder {
+		if info.IsDir() && path != f.baseDir {
 			return filepath.SkipDir
 		}
 
@@ -76,7 +76,7 @@ func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
 
 // isGoFile checks if a filename has a .go extension (case-insensitive).
 func isGoFile(filename string) bool {
-	return strings.HasSuffix(strings.ToLower(filename), ".go")
+	return filepath.Ext(filename) == ".go"
 }
 
 // extractInterfacesFromFile reads a file and extracts interface names.
