@@ -44,7 +44,7 @@ func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
 
 	f.baseDir = absFolder
 
-	err = filepath.WalkDir(folder, func(path string, info fs.DirEntry, err error) error {
+	err = filepath.WalkDir(f.baseDir, func(path string, info fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
