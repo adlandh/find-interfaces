@@ -21,8 +21,8 @@ type InterfaceFinder struct {
 }
 
 type fileParseError struct {
-	path string
 	err  error
+	path string
 }
 
 func (e *fileParseError) Error() string {
@@ -41,8 +41,10 @@ func NewInterfaceFinder() *InterfaceFinder {
 // FindInterfaces searches for interface definitions in the specified folder.
 // It does not search in subfolders.
 func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
-	var interfaces []string
-	var parseErrors []error
+	var (
+		interfaces  []string
+		parseErrors []error
+	)
 
 	// Get absolute path of the folder to use as base directory for security validation
 	absFolder, err := filepath.Abs(folder)
@@ -146,7 +148,7 @@ func (f *InterfaceFinder) extractInterfacesFromFile(filePath string) ([]string, 
 }
 
 func extractInterfacesFromAST(file *ast.File) []string {
-	var interfaces []string
+	interfaces := make([]string, 0, len(file.Decls))
 
 	for _, decl := range file.Decls {
 		interfaces = append(interfaces, extractInterfacesFromDecl(decl)...)
@@ -162,6 +164,7 @@ func extractInterfacesFromDecl(decl ast.Decl) []string {
 	}
 
 	var interfaces []string
+
 	for _, spec := range genDecl.Specs {
 		if name, ok := extractInterfaceName(spec); ok {
 			interfaces = append(interfaces, name)
