@@ -4,31 +4,24 @@ package main
 import (
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"log"
-	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
-// Default regular expression to match Go interface definitions.
-// Captures the interface name as the first submatch.
-var defaultInterfaceRegex = regexp.MustCompile(`(?s)type\s+([\p{L}_][\p{L}\p{N}_]*)(\[(?:[^\[\]]|\[[^\[\]]*\])*\])?\s*interface\s*\{`)
-
 // InterfaceFinder defines the configuration for finding interfaces.
 type InterfaceFinder struct {
-	// Pattern is the regular expression used to find interface definitions.
-	Pattern *regexp.Regexp
-	// baseDir is the absolute path of the directory being searched
+	// baseDir is the absolute path of the directory being searched.
 	baseDir string
 }
 
 // NewInterfaceFinder creates a new InterfaceFinder with default settings.
 func NewInterfaceFinder() *InterfaceFinder {
-	return &InterfaceFinder{
-		Pattern: defaultInterfaceRegex,
-	}
+	return &InterfaceFinder{}
 }
 
 // FindInterfaces searches for interface definitions in the specified folder.
@@ -82,28 +75,52 @@ func isGoFile(filename string) bool {
 // It validates that the file path is within the base directory to prevent directory traversal attacks.
 func (f *InterfaceFinder) extractInterfacesFromFile(filePath string) ([]string, error) {
 	cleanPath := filepath.Clean(filePath)
-	// Validate that the file path is within the base directory
-	if !strings.HasPrefix(cleanPath, f.baseDir) {
-		return nil, fmt.Errorf("file path %s (clean path: %s) is outside the base directory %s", filePath, cleanPath, f.baseDir)
+
+	if err := validatePathWithinBase(cleanPath, f.baseDir); err != nil {
+		return nil, err
 	}
 
-	data, err := os.ReadFile(cleanPath)
+	fset := token.NewFileSet()
+
+	file, err := parser.ParseFile(fset, cleanPath, nil, parser.SkipObjectResolution)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
+		return nil, fmt.Errorf("failed to parse Go file %q: %w", cleanPath, err)
 	}
-
-	src := string(data)
-	matches := f.Pattern.FindAllStringSubmatch(src, -1)
 
 	var interfaces []string
 
-	for _, match := range matches {
-		if len(match) > 1 {
-			interfaces = append(interfaces, match[1])
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.TYPE {
+			continue
+		}
+
+		for _, spec := range genDecl.Specs {
+			typeSpec, ok := spec.(*ast.TypeSpec)
+			if !ok {
+				continue
+			}
+
+			if _, ok := typeSpec.Type.(*ast.InterfaceType); ok {
+				interfaces = append(interfaces, typeSpec.Name.Name)
+			}
 		}
 	}
 
 	return interfaces, nil
+}
+
+func validatePathWithinBase(path string, baseDir string) error {
+	rel, err := filepath.Rel(baseDir, path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path %q against base directory %q: %w", path, baseDir, err)
+	}
+
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("file path %s is outside the base directory %s", path, baseDir)
+	}
+
+	return nil
 }
 
 func main() {
