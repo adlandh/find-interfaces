@@ -14,7 +14,7 @@ import (
 
 // Default regular expression to match Go interface definitions.
 // Captures the interface name as the first submatch.
-var defaultInterfaceRegex = regexp.MustCompile(`type\s+(\w+)\s+interface\s*\{`)
+var defaultInterfaceRegex = regexp.MustCompile(`(?s)type\s+(\w+)(\[.*?\])?\s*interface\s*\{`)
 
 // InterfaceFinder defines the configuration for finding interfaces.
 type InterfaceFinder struct {
@@ -66,7 +66,6 @@ func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
@@ -76,7 +75,7 @@ func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
 
 // isGoFile checks if a filename has a .go extension (case-insensitive).
 func isGoFile(filename string) bool {
-	return filepath.Ext(filename) == ".go"
+	return strings.EqualFold(filepath.Ext(filename), ".go")
 }
 
 // extractInterfacesFromFile reads a file and extracts interface names.
