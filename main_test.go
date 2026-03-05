@@ -68,14 +68,14 @@ type Multiline[
 	writeTestFile(t, filepath.Join(tempDir, "not_an_interface_multiline.go"), `package test
 type HandlerFunc[T any] func(ctx context.Context, data T, headers map[string]any) error
 
-type ProducerInterface[T any] interface {
+type ProducerInterface[T map[][]any] interface {
 	Publish(ctx context.Context, routingKey string, message T) (err error)
 	PublishWithHeaders(ctx context.Context, routingKey string, message T, headers map[string]any) (err error)
 	RoutingKey() string
 }`)
 
 	writeTestFile(t, filepath.Join(tempDir, "уникод.go"), `package test
-type ИнтерфейсНаРусском[T any]interface { Use(T) }
+type ИнтерфейсНаРусском[T []byte]interface { Use(T) }
 `)
 
 	finder := NewInterfaceFinder()
