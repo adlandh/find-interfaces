@@ -1,44 +1,109 @@
 # find-interfaces
 
-A simple Go utility that finds all interface definitions in a given folder without checking subfolders.
+`find-interfaces` is a small Go CLI that prints interface type names found in Go source files in a single directory.
 
-Mostly created to use with [gowrap](https://github.com/hexdigest/gowrap).
+It is designed for shell usage and works well in pipelines with tools such as [gowrap](https://github.com/hexdigest/gowrap).
+
+## What It Does
+
+- Scans `.go` files in the target directory
+- Parses source code using Go's AST
+- Extracts declared interface type names
+- Ignores subdirectories
+- Prints results as a single space-separated line
 
 ## Requirements
 
-- Go 1.22 or later
+- Go 1.25 or later
 
 ## Installation
+
+Install the latest version:
 
 ```bash
 go install github.com/adlandh/find-interfaces@latest
 ```
 
-## Usage
+Build from source:
 
 ```bash
-# Search in current directory
+go build .
+```
+
+## Usage
+
+Search the current directory:
+
+```bash
 find-interfaces
-
-# Search in a specific directory
-find-interfaces -path /path/to/directory
 ```
 
-## Features
+Search a specific directory:
 
-- Finds all interface definitions in Go files within a specified directory
-- Ignores subdirectories
-- Case-insensitive file extension matching
-- Uses regular expressions to identify interface definitions
-- Prevents directory traversal attacks with path validation
-- Processes only files with .go extension
-
-## Output
-
-The tool outputs a space-separated list of interface names found in the specified directory, which can be piped to other tools like gowrap.
-
-Example:
+```bash
+find-interfaces -path /path/to/package
 ```
-$ find-interfaces -path ./pkg/models
-Reader Writer Processor Handler
+
+Show help:
+
+```bash
+find-interfaces -h
 ```
+
+## Example
+
+Given this Go source:
+
+```go
+package sample
+
+type Reader interface {
+	Read([]byte) (int, error)
+}
+
+type Writer[T any] interface {
+	Write(T) error
+}
+
+type handlerFunc func()
+```
+
+Running:
+
+```bash
+find-interfaces -path ./sample
+```
+
+Produces:
+
+```text
+Reader Writer
+```
+
+## Behavior
+
+- Only the top-level target directory is scanned
+- Only files with a `.go` extension are considered
+- File extension matching is case-insensitive
+- Comments and string literals that merely contain interface-like text are ignored
+- Output order follows file traversal order and is not explicitly sorted
+
+## Exit Behavior
+
+- On success, the tool prints discovered interface names to standard output
+- If no interfaces are found, it prints nothing
+- On failure, it exits with a non-zero status and prints an error message
+
+## Typical Pipeline Use
+
+```bash
+for iface in $(find-interfaces -path ./pkg/service); do
+  gowrap gen -p ./pkg/service -i "$iface" -t fallback -o "./pkg/service/${iface,,}_wrapper.go"
+done
+```
+
+## Limitations
+
+- It does not recurse into nested directories
+- It does not filter by package name
+- It only reports interface names, not file paths or method details

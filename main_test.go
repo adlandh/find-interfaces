@@ -60,7 +60,7 @@ type Compact[T any]interface { Use(T) }
 type Multiline[
 	P interface {
 		~int | ~int64
-	}
+	},
 ]interface {
 	Use(P)
 }
@@ -68,7 +68,7 @@ type Multiline[
 	writeTestFile(t, filepath.Join(tempDir, "not_an_interface_multiline.go"), `package test
 type HandlerFunc[T any] func(ctx context.Context, data T, headers map[string]any) error
 
-type ProducerInterface[T map[][]any] interface {
+type ProducerInterface[T map[string][]any] interface {
 	Publish(ctx context.Context, routingKey string, message T) (err error)
 	PublishWithHeaders(ctx context.Context, routingKey string, message T, headers map[string]any) (err error)
 	RoutingKey() string
@@ -86,6 +86,54 @@ type ИнтерфейсНаРусском[T []byte]interface { Use(T) }
 	require.Equal(t, []string{"Compact", "Multiline", "ProducerInterface", "ИнтерфейсНаРусском"}, interfacesFound)
 }
 
+func TestFindInterfaces_IgnoresInterfaceTextInCommentsAndStrings(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(tempDir, "input.go"), `package test
+
+// type Fake interface { Ignored() }
+const example = "type AlsoFake interface { Ignored() }"
+
+type Real interface {
+	Do()
+}
+`)
+
+	finder := NewInterfaceFinder()
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"Real"}, interfacesFound)
+}
+
+func TestFindInterfaces_ContinuesWhenAFileHasParseErrors(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(tempDir, "valid.go"), `package test
+type Reader interface { Read() }
+`)
+	writeTestFile(t, filepath.Join(tempDir, "broken.go"), `package test
+func (
+`)
+
+	finder := NewInterfaceFinder()
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"Reader"}, interfacesFound)
+}
+
+func TestFindInterfaces_ReturnsErrorWhenAllGoFilesFailToParse(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(tempDir, "broken.go"), `package test
+func (
+`)
+
+	finder := NewInterfaceFinder()
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.Error(t, err)
+	require.Empty(t, interfacesFound)
+}
+
 func TestFindInterfaces_NonExistentDirectory(t *testing.T) {
 	finder := NewInterfaceFinder()
 	interfaces, err := finder.FindInterfaces(filepath.Join(t.TempDir(), "does-not-exist"))
@@ -98,6 +146,27 @@ func TestExtractInterfacesFromFile_RejectsPathOutsideBaseDir(t *testing.T) {
 	outsideDir := t.TempDir()
 
 	outsideFile := filepath.Join(outsideDir, "outside.go")
+	writeTestFile(t, outsideFile, `package test
+type Outside interface { Noop() }
+`)
+
+	finder := NewInterfaceFinder()
+	finder.baseDir = baseDir
+
+	interfaces, err := finder.extractInterfacesFromFile(outsideFile)
+	require.Error(t, err)
+	require.Empty(t, interfaces)
+}
+
+func TestExtractInterfacesFromFile_RejectsSiblingPathWithSharedPrefix(t *testing.T) {
+	parentDir := t.TempDir()
+	baseDir := filepath.Join(parentDir, "repo")
+	sharedPrefixDir := filepath.Join(parentDir, "repo-other")
+
+	require.NoError(t, os.MkdirAll(baseDir, 0o755))
+	require.NoError(t, os.MkdirAll(sharedPrefixDir, 0o755))
+
+	outsideFile := filepath.Join(sharedPrefixDir, "outside.go")
 	writeTestFile(t, outsideFile, `package test
 type Outside interface { Noop() }
 `)
