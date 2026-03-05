@@ -65,13 +65,25 @@ type Multiline[
 	Use(P)
 }
 `)
+	writeTestFile(t, filepath.Join(tempDir, "not_an_interface_multiline.go"), `package test
+type HandlerFunc[T any] func(ctx context.Context, data T, headers map[string]any) error
+
+type ProducerInterface[T map[][]any] interface {
+	Publish(ctx context.Context, routingKey string, message T) (err error)
+	PublishWithHeaders(ctx context.Context, routingKey string, message T, headers map[string]any) (err error)
+	RoutingKey() string
+}`)
+
+	writeTestFile(t, filepath.Join(tempDir, "уникод.go"), `package test
+type ИнтерфейсНаРусском[T []byte]interface { Use(T) }
+`)
 
 	finder := NewInterfaceFinder()
 	interfacesFound, err := finder.FindInterfaces(tempDir)
 	require.NoError(t, err)
 
 	sort.Strings(interfacesFound)
-	require.Equal(t, []string{"Compact", "Multiline"}, interfacesFound)
+	require.Equal(t, []string{"Compact", "Multiline", "ProducerInterface", "ИнтерфейсНаРусском"}, interfacesFound)
 }
 
 func TestFindInterfaces_NonExistentDirectory(t *testing.T) {

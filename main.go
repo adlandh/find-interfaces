@@ -14,7 +14,7 @@ import (
 
 // Default regular expression to match Go interface definitions.
 // Captures the interface name as the first submatch.
-var defaultInterfaceRegex = regexp.MustCompile(`(?s)type\s+(\w+)(\[.*?\])?\s*interface\s*\{`)
+var defaultInterfaceRegex = regexp.MustCompile(`(?s)type\s+([\p{L}_][\p{L}\p{N}_]*)(\[(?:[^\[\]]|\[[^\[\]]*\])*\])?\s*interface\s*\{`)
 
 // InterfaceFinder defines the configuration for finding interfaces.
 type InterfaceFinder struct {
