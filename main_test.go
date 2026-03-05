@@ -49,6 +49,31 @@ type ShouldNotBeFound interface { Noop() }
 	require.Equal(t, []string{"Closer", "Reader", "Writer"}, interfacesFound)
 }
 
+func TestFindInterfaces_FindsGenericInterfacesWithoutSpaceAndMultilineParams(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(tempDir, "generic_compact.go"), `package test
+type Compact[T any]interface { Use(T) }
+`)
+
+	writeTestFile(t, filepath.Join(tempDir, "generic_multiline.go"), `package test
+type Multiline[
+	P interface {
+		~int | ~int64
+	}
+]interface {
+	Use(P)
+}
+`)
+
+	finder := NewInterfaceFinder()
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.NoError(t, err)
+
+	sort.Strings(interfacesFound)
+	require.Equal(t, []string{"Compact", "Multiline"}, interfacesFound)
+}
+
 func TestFindInterfaces_NonExistentDirectory(t *testing.T) {
 	finder := NewInterfaceFinder()
 	interfaces, err := finder.FindInterfaces(filepath.Join(t.TempDir(), "does-not-exist"))
