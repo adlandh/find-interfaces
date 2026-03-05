@@ -105,6 +105,35 @@ type Real interface {
 	require.Equal(t, []string{"Real"}, interfacesFound)
 }
 
+func TestFindInterfaces_ContinuesWhenAFileHasParseErrors(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(tempDir, "valid.go"), `package test
+type Reader interface { Read() }
+`)
+	writeTestFile(t, filepath.Join(tempDir, "broken.go"), `package test
+func (
+`)
+
+	finder := NewInterfaceFinder()
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"Reader"}, interfacesFound)
+}
+
+func TestFindInterfaces_ReturnsErrorWhenAllGoFilesFailToParse(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(tempDir, "broken.go"), `package test
+func (
+`)
+
+	finder := NewInterfaceFinder()
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.Error(t, err)
+	require.Empty(t, interfacesFound)
+}
+
 func TestFindInterfaces_NonExistentDirectory(t *testing.T) {
 	finder := NewInterfaceFinder()
 	interfaces, err := finder.FindInterfaces(filepath.Join(t.TempDir(), "does-not-exist"))
