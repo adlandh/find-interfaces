@@ -1,6 +1,11 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -198,4 +203,61 @@ func TestIsGoFile(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestFileParseError_Unwrap(t *testing.T) {
+	innerErr := errors.New("inner error")
+	parseErr := &fileParseError{path: "test.go", err: innerErr}
+
+	require.Equal(t, innerErr, parseErr.Unwrap())
+}
+
+func TestExtractInterfacesFromDecl_NonTypeDeclaration(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", "package test; func Foo() {}", 0)
+	require.NoError(t, err)
+
+	interfaces := extractInterfacesFromAST(file)
+	require.Empty(t, interfaces)
+}
+
+func TestExtractInterfaceName_NonInterfaceType(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", "package test; type MyInt int", 0)
+	require.NoError(t, err)
+
+	var found []string
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			if name, ok := extractInterfaceName(spec); ok {
+				found = append(found, name)
+			}
+		}
+	}
+
+	require.Empty(t, found)
+}
+
+func TestAsFileParseError_Nil(t *testing.T) {
+	result := asFileParseError(errors.New("some error"))
+	require.Nil(t, result)
+}
+
+func TestAsFileParseError_Wrapped(t *testing.T) {
+	innerErr := errors.New("inner")
+	parseErr := &fileParseError{path: "test.go", err: innerErr}
+	wrapped := fmt.Errorf("wrapped: %w", parseErr)
+
+	result := asFileParseError(wrapped)
+	require.Equal(t, parseErr, result)
+}
+
+func TestValidatePathWithinBase_RelError(t *testing.T) {
+	err := validatePathWithinBase("/nonexistent/path/file.go", "/different/base")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outside the base directory")
 }
