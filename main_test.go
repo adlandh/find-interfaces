@@ -261,3 +261,64 @@ func TestValidatePathWithinBase_RelError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "outside the base directory")
 }
+
+func TestExtractInterfaceName_AliasType(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", "package test; type MyInt = int", 0)
+	require.NoError(t, err)
+
+	var found []string
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			if name, ok := extractInterfaceName(spec); ok {
+				found = append(found, name)
+			}
+		}
+	}
+
+	require.Empty(t, found)
+}
+
+func TestExtractInterfaceName_StructType(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", "package test; type MyStruct struct{}", 0)
+	require.NoError(t, err)
+
+	var found []string
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			if name, ok := extractInterfaceName(spec); ok {
+				found = append(found, name)
+			}
+		}
+	}
+
+	require.Empty(t, found)
+}
+
+func TestExtractInterfacesFromFile_ValidationError(t *testing.T) {
+	baseDir := t.TempDir()
+
+	// Create a file in baseDir
+	filePath := filepath.Join(baseDir, "test.go")
+	writeTestFile(t, filePath, `package test
+type Reader interface { Read() }
+`)
+
+	// Now set baseDir to a different path to trigger validation error
+	finder := NewInterfaceFinder()
+	finder.baseDir = t.TempDir() // Different directory
+
+	interfaces, err := finder.extractInterfacesFromFile(filePath)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outside the base directory")
+	require.Empty(t, interfaces)
+}
