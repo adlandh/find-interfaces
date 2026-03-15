@@ -322,3 +322,68 @@ type Reader interface { Read() }
 	require.Contains(t, err.Error(), "outside the base directory")
 	require.Empty(t, interfaces)
 }
+
+func TestCollectInterfaces_ReturnsNonFileParseError(t *testing.T) {
+	baseDir := t.TempDir()
+	outsideDir := t.TempDir()
+
+	// Create a file outside baseDir
+	outsideFile := filepath.Join(outsideDir, "outside.go")
+	writeTestFile(t, outsideFile, `package test
+type Outside interface { Noop() }
+`)
+
+	finder := NewInterfaceFinder()
+	finder.baseDir = baseDir
+
+	var interfaces []string
+	var parseErrors []error
+
+	// This should return an error that's not a fileParseError
+	err := finder.collectInterfaces(outsideFile, &interfaces, &parseErrors)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outside the base directory")
+}
+
+func TestExtractInterfacesFromFile_PartialParseWithErrors(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a file with syntax errors but partial content
+	filePath := filepath.Join(tempDir, "partial.go")
+	writeTestFile(t, filePath, `package test
+
+type Reader interface { Read() }
+
+func broken(
+`)
+
+	finder := NewInterfaceFinder()
+	finder.baseDir = tempDir
+
+	interfaces, err := finder.extractInterfacesFromFile(filePath)
+	require.Error(t, err) // Should return error due to parse error
+	// But interfaces should still be found before the error
+	require.Contains(t, interfaces, "Reader")
+}
+
+func TestExtractInterfaceName_NonTypeSpec(t *testing.T) {
+	// Test with an import spec instead of type spec
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", "package test; import \"fmt\"", 0)
+	require.NoError(t, err)
+
+	var found []string
+	for _, decl := range file.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.IMPORT {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			if name, ok := extractInterfaceName(spec); ok {
+				found = append(found, name)
+			}
+		}
+	}
+
+	require.Empty(t, found)
+}
