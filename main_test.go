@@ -6,10 +6,12 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -110,6 +112,42 @@ type Real interface {
 	require.Equal(t, []string{"Real"}, interfacesFound)
 }
 
+func TestFindInterfaces_IgnoresInterfaceLikeTextInInterfaceBody(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(tempDir, "input.go"), `package test
+
+type Reader interface {
+	Read() (data []byte, err error)
+}
+`)
+
+	finder := NewInterfaceFinder()
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"Reader"}, interfacesFound)
+}
+
+func TestFindInterfaces_MultipleMixedDeclarationsInSingleFile(t *testing.T) {
+	tempDir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(tempDir, "mixed.go"), `package test
+
+type Alias = int
+type Person struct { Name string }
+type Reader interface { Read() }
+const Max = 100
+var global = 42
+type Writer interface { Write([]byte) }
+`)
+
+	finder := NewInterfaceFinder()
+	interfacesFound, err := finder.FindInterfaces(tempDir)
+	require.NoError(t, err)
+	sort.Strings(interfacesFound)
+	require.Equal(t, []string{"Reader", "Writer"}, interfacesFound)
+}
+
 func TestFindInterfaces_ContinuesWhenAFileHasParseErrors(t *testing.T) {
 	tempDir := t.TempDir()
 
@@ -142,6 +180,17 @@ func (
 func TestFindInterfaces_NonExistentDirectory(t *testing.T) {
 	finder := NewInterfaceFinder()
 	interfaces, err := finder.FindInterfaces(filepath.Join(t.TempDir(), "does-not-exist"))
+	require.Error(t, err)
+	require.Empty(t, interfaces)
+}
+
+func TestFindInterfaces_WalkErrorPropagation(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Chmod(dir, 0o000))
+
+	finder := NewInterfaceFinder()
+	interfaces, err := finder.FindInterfaces(dir)
+
 	require.Error(t, err)
 	require.Empty(t, interfaces)
 }
@@ -367,7 +416,6 @@ func broken(
 }
 
 func TestExtractInterfaceName_NonTypeSpec(t *testing.T) {
-	// Test with an import spec instead of type spec
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "", "package test; import \"fmt\"", 0)
 	require.NoError(t, err)
@@ -387,3 +435,133 @@ func TestExtractInterfaceName_NonTypeSpec(t *testing.T) {
 
 	require.Empty(t, found)
 }
+
+func TestShouldSkipDir(t *testing.T) {
+	baseDir := t.TempDir()
+	subDir := filepath.Join(baseDir, "subdir")
+	require.NoError(t, os.MkdirAll(subDir, 0o755))
+
+	baseInfo, err := os.Lstat(baseDir)
+	require.NoError(t, err)
+	_, err = os.Lstat(subDir)
+	require.NoError(t, err)
+
+	require.False(t, shouldSkipDir(baseDir, osDirEntry{info: baseInfo}, baseDir), "base directory itself should not be skipped")
+
+	nestedDir := filepath.Join(subDir, "nested")
+	require.NoError(t, os.MkdirAll(nestedDir, 0o755))
+	nestedInfo, err := os.Lstat(nestedDir)
+	require.NoError(t, err)
+	require.True(t, shouldSkipDir(nestedDir, osDirEntry{info: nestedInfo}, baseDir), "subdirectory should be skipped")
+}
+
+func TestShouldProcessFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		info    fs.FileInfo
+		want    bool
+		wantErr bool
+	}{
+		{
+			name:    "regular go file",
+			info:    fileInfo{name: "test.go", mode: 0o644},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:    "uppercase extension",
+			info:    fileInfo{name: "test.GO", mode: 0o644},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name:    "non go file",
+			info:    fileInfo{name: "test.txt", mode: 0o644},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:    "no extension",
+			info:    fileInfo{name: "Makefile", mode: 0o644},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name:    "directory",
+			info:    fileInfo{name: "mydir", mode: fs.ModeDir | 0o755},
+			want:    false,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldProcessFile(osDirEntry{info: tt.info})
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestFileParseError_Error(t *testing.T) {
+	innerErr := errors.New("syntax error")
+	parseErr := &fileParseError{path: "test.go", err: innerErr}
+
+	msg := parseErr.Error()
+	require.Contains(t, msg, "test.go")
+	require.Contains(t, msg, "syntax error")
+}
+
+func TestVisitPath_WalkError(t *testing.T) {
+	finder := NewInterfaceFinder()
+	var interfaces []string
+	var parseErrors []error
+
+	walkErr := errors.New("permission denied")
+	err := finder.visitPath("/some/path", nil, walkErr, &interfaces, &parseErrors)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "permission denied")
+}
+
+func TestExtractInterfacesFromDecl_NonTypeTokens(t *testing.T) {
+	tests := []struct {
+		name      string
+		code      string
+		declIndex int
+	}{
+		{"const declaration", "package test; const X = 1", 0},
+		{"var declaration", "package test; var Y = 2", 0},
+		{"import declaration", "package test; import \"fmt\"", 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "", tt.code, 0)
+			require.NoError(t, err)
+			require.Less(t, tt.declIndex, len(file.Decls))
+			result := extractInterfacesFromDecl(file.Decls[tt.declIndex])
+			require.Nil(t, result)
+		})
+	}
+}
+
+type osDirEntry struct {
+	info fs.FileInfo
+}
+
+func (e osDirEntry) Name() string               { return e.info.Name() }
+func (e osDirEntry) IsDir() bool                { return e.info.IsDir() }
+func (e osDirEntry) Type() fs.FileMode          { return e.info.Mode().Type() }
+func (e osDirEntry) Info() (fs.FileInfo, error) { return e.info, nil }
+
+type fileInfo struct {
+	name string
+	mode fs.FileMode
+}
+
+func (f fileInfo) Name() string       { return f.name }
+func (f fileInfo) Size() int64        { return 0 }
+func (f fileInfo) Mode() fs.FileMode  { return f.mode }
+func (f fileInfo) ModTime() time.Time { return time.Time{} }
+func (f fileInfo) IsDir() bool        { return f.mode&fs.ModeDir != 0 }
+func (f fileInfo) Sys() any           { return nil }
