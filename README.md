@@ -30,6 +30,32 @@ Build from source:
 go build .
 ```
 
+## Development
+
+Run all tests:
+
+```bash
+go test ./...
+```
+
+Match CI test settings:
+
+```bash
+go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+```
+
+Inspect coverage by function:
+
+```bash
+go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out
+```
+
+Match the CI lint flow:
+
+```bash
+curl -sS https://raw.githubusercontent.com/adlandh/golangci-lint-config/refs/heads/main/.golangci.yml -o .golangci.yml && golangci-lint run
+```
+
 ## Usage
 
 Search the current directory:
@@ -86,6 +112,7 @@ Reader Writer
 - Only files with a `.go` extension are considered
 - File extension matching is case-insensitive
 - Comments and string literals that merely contain interface-like text are ignored
+- Files with parse errors may still contribute interface names when the AST is partially recoverable
 - Output order follows file traversal order and is not explicitly sorted
 
 ## Exit Behavior
