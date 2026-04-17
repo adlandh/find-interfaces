@@ -204,10 +204,7 @@ func TestExtractInterfacesFromFile_RejectsPathOutsideBaseDir(t *testing.T) {
 type Outside interface { Noop() }
 `)
 
-	finder := NewInterfaceFinder()
-	finder.baseDir = baseDir
-
-	interfaces, err := finder.extractInterfacesFromFile(outsideFile)
+	interfaces, err := extractInterfacesFromFile(baseDir, outsideFile)
 	require.Error(t, err)
 	require.Empty(t, interfaces)
 }
@@ -225,10 +222,7 @@ func TestExtractInterfacesFromFile_RejectsSiblingPathWithSharedPrefix(t *testing
 type Outside interface { Noop() }
 `)
 
-	finder := NewInterfaceFinder()
-	finder.baseDir = baseDir
-
-	interfaces, err := finder.extractInterfacesFromFile(outsideFile)
+	interfaces, err := extractInterfacesFromFile(baseDir, outsideFile)
 	require.Error(t, err)
 	require.Empty(t, interfaces)
 }
@@ -362,17 +356,16 @@ func TestExtractInterfacesFromFile_ValidationError(t *testing.T) {
 type Reader interface { Read() }
 `)
 
-	// Now set baseDir to a different path to trigger validation error
-	finder := NewInterfaceFinder()
-	finder.baseDir = t.TempDir() // Different directory
+	// Now use a different baseDir to trigger validation error
+	otherBaseDir := t.TempDir() // Different directory
 
-	interfaces, err := finder.extractInterfacesFromFile(filePath)
+	interfaces, err := extractInterfacesFromFile(otherBaseDir, filePath)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "outside the base directory")
 	require.Empty(t, interfaces)
 }
 
-func TestCollectInterfaces_ReturnsNonFileParseError(t *testing.T) {
+func TestExtractInterfacesFromFile_ReturnsNonFileParseErrorForOutsidePath(t *testing.T) {
 	baseDir := t.TempDir()
 	outsideDir := t.TempDir()
 
@@ -382,16 +375,11 @@ func TestCollectInterfaces_ReturnsNonFileParseError(t *testing.T) {
 type Outside interface { Noop() }
 `)
 
-	finder := NewInterfaceFinder()
-	finder.baseDir = baseDir
-
-	var interfaces []string
-	var parseErrors []error
-
 	// This should return an error that's not a fileParseError
-	err := finder.collectInterfaces(outsideFile, &interfaces, &parseErrors)
+	_, err := extractInterfacesFromFile(baseDir, outsideFile)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "outside the base directory")
+	require.Nil(t, asFileParseError(err), "error should not be a *fileParseError")
 }
 
 func TestExtractInterfacesFromFile_PartialParseWithErrors(t *testing.T) {
@@ -406,10 +394,7 @@ type Reader interface { Read() }
 func broken(
 `)
 
-	finder := NewInterfaceFinder()
-	finder.baseDir = tempDir
-
-	interfaces, err := finder.extractInterfacesFromFile(filePath)
+	interfaces, err := extractInterfacesFromFile(tempDir, filePath)
 	require.Error(t, err) // Should return error due to parse error
 	// But interfaces should still be found before the error
 	require.Contains(t, interfaces, "Reader")
@@ -512,14 +497,11 @@ func TestFileParseError_Error(t *testing.T) {
 }
 
 func TestVisitPath_WalkError(t *testing.T) {
-	finder := NewInterfaceFinder()
-	var interfaces []string
-	var parseErrors []error
-
 	walkErr := errors.New("permission denied")
-	err := finder.visitPath("/some/path", nil, walkErr, &interfaces, &parseErrors)
+	found, err := visitPath("", "/some/path", nil, walkErr)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "permission denied")
+	require.Empty(t, found)
 }
 
 func TestExtractInterfacesFromDecl_NonTypeTokens(t *testing.T) {
