@@ -15,10 +15,10 @@ import (
 )
 
 // InterfaceFinder defines the configuration for finding interfaces.
-type InterfaceFinder struct {
-	// baseDir is the absolute path of the directory being searched.
-	baseDir string
-}
+//
+// It holds no mutable state, so a single instance is safe for concurrent use
+// across multiple FindInterfaces calls.
+type InterfaceFinder struct{}
 
 type fileParseError struct {
 	err  error
@@ -41,21 +41,33 @@ func NewInterfaceFinder() *InterfaceFinder {
 // FindInterfaces searches for interface definitions in the specified folder.
 // It does not search in subfolders.
 func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
+	// Get absolute path of the folder to use as base directory for security validation
+	baseDir, err := filepath.Abs(folder)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
 	var (
 		interfaces  []string
 		parseErrors []error
 	)
 
-	// Get absolute path of the folder to use as base directory for security validation
-	absFolder, err := filepath.Abs(folder)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get absolute path: %w", err)
-	}
+	err = filepath.WalkDir(baseDir, func(path string, info fs.DirEntry, walkErr error) error {
+		found, visitErr := visitPath(baseDir, path, info, walkErr)
+		if visitErr != nil {
+			if parseErr := asFileParseError(visitErr); parseErr != nil {
+				parseErrors = append(parseErrors, parseErr)
+				interfaces = append(interfaces, found...)
 
-	f.baseDir = absFolder
+				return nil
+			}
 
-	err = filepath.WalkDir(f.baseDir, func(path string, info fs.DirEntry, walkErr error) error {
-		return f.visitPath(path, info, walkErr, &interfaces, &parseErrors)
+			return visitErr
+		}
+
+		interfaces = append(interfaces, found...)
+
+		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
@@ -68,20 +80,25 @@ func (f *InterfaceFinder) FindInterfaces(folder string) ([]string, error) {
 	return interfaces, nil
 }
 
-func (f *InterfaceFinder) visitPath(path string, info fs.DirEntry, walkErr error, interfaces *[]string, parseErrors *[]error) error {
+// visitPath processes a single entry yielded by filepath.WalkDir.
+//
+// It returns any interfaces discovered in the file and, optionally, either
+// a *fileParseError (partial success - caller should accumulate) or a
+// sentinel such as filepath.SkipDir / a walk error (caller should propagate).
+func visitPath(baseDir, path string, info fs.DirEntry, walkErr error) ([]string, error) {
 	if walkErr != nil {
-		return walkErr
+		return nil, walkErr
 	}
 
-	if shouldSkipDir(path, info, f.baseDir) {
-		return filepath.SkipDir
+	if shouldSkipDir(path, info, baseDir) {
+		return nil, filepath.SkipDir
 	}
 
 	if !shouldProcessFile(info) {
-		return nil
+		return nil, nil
 	}
 
-	return f.collectInterfaces(path, interfaces, parseErrors)
+	return extractInterfacesFromFile(baseDir, path)
 }
 
 func shouldSkipDir(path string, info fs.DirEntry, baseDir string) bool {
@@ -90,22 +107,6 @@ func shouldSkipDir(path string, info fs.DirEntry, baseDir string) bool {
 
 func shouldProcessFile(info fs.DirEntry) bool {
 	return !info.IsDir() && isGoFile(info.Name())
-}
-
-func (f *InterfaceFinder) collectInterfaces(path string, interfaces *[]string, parseErrors *[]error) error {
-	foundInterfaces, err := f.extractInterfacesFromFile(path)
-	*interfaces = append(*interfaces, foundInterfaces...)
-
-	if err == nil {
-		return nil
-	}
-
-	if parseErr := asFileParseError(err); parseErr != nil {
-		*parseErrors = append(*parseErrors, parseErr)
-		return nil
-	}
-
-	return err
 }
 
 func asFileParseError(err error) *fileParseError {
@@ -124,10 +125,10 @@ func isGoFile(filename string) bool {
 
 // extractInterfacesFromFile reads a file and extracts interface names.
 // It validates that the file path is within the base directory to prevent directory traversal attacks.
-func (f *InterfaceFinder) extractInterfacesFromFile(filePath string) ([]string, error) {
+func extractInterfacesFromFile(baseDir, filePath string) ([]string, error) {
 	cleanPath := filepath.Clean(filePath)
 
-	if err := validatePathWithinBase(cleanPath, f.baseDir); err != nil {
+	if err := validatePathWithinBase(cleanPath, baseDir); err != nil {
 		return nil, err
 	}
 
